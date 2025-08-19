@@ -10,7 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
-	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -281,14 +281,10 @@ func getListenAddress(addr string) string {
 type tlsLoader struct {
 	*options.TLS
 
-	mu   sync.Mutex
-	cert *tls.Certificate
+	cert atomic.Pointer[tls.Certificate]
 }
 
 func (t *tlsLoader) LoadCert() error {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
 	keyData, err := getSecretValue(t.Key)
 	if err != nil {
 		return fmt.Errorf("could not load key data: %v", err)
@@ -304,16 +300,16 @@ func (t *tlsLoader) LoadCert() error {
 		return fmt.Errorf("could not parse certificate data: %v", err)
 	}
 
-	t.cert = &cert
+	t.cert.Store(&cert)
 	return nil
 }
 
 func (t *tlsLoader) GetCertificate(_ *tls.ClientHelloInfo) (*tls.Certificate, error) {
-	if t.cert == nil {
+	if t.cert.Load() == nil {
 		return nil, fmt.Errorf("no certificate")
 	}
 
-	return t.cert, nil
+	return t.cert.Load(), nil
 }
 
 func getCertificateLoader(opts *options.TLS) (*tlsLoader, error) {
